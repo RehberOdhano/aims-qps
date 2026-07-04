@@ -1,0 +1,54 @@
+/*
+  Design tokens ported from legacy/AIMS_QPS_v2.html so the rebuilt app keeps
+  the same visual identity. Component-level styles (cards, tables, badges,
+  etc.) are added as each screen is ported in Phase 2 — this file only
+  carries the shared palette and base reset for now.
+*/
+:root {
+  --color-navy: #1b3a6b;
+  --color-navy-dark: #142d54;
+  --color-teal: #0e7c7b;
+  --color-teal-dark: #0a6160;
+  --color-bg: #eef2f7;
+  --color-border: #dde3ee;
+  --color-text: #1a1a2e;
+  --color-text-muted: #6b7a99;
+  --color-text-faint: #9babc8;
+  --color-accent-blue: #a8d0ef;
+
+  --color-success: #1a7f4b;
+  --color-success-bg: #d4edda;
+  --color-warning: #c07b1a;
+  --color-warning-bg: #fef3dc;
+  --color-warning-text: #7a4d10;
+  --color-danger: #c0392b;
+  --color-danger-bg: #fad7d4;
+  --color-danger-text: #7b1f1a;
+  --color-danger-border: #e07070;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  max-width: 100vw;
+  height: 100%;
+}
+
+body {
+  font-family: "Segoe UI", Arial, Helvetica, sans-serif;
+  font-size: 13px;
+  color: var(--color-text);
+  background: var(--color-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
