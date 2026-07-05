@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
+import { requireUser } from "@/lib/dal";
 
-export default function RootPage() {
-  redirect("/round");
+export default async function RootPage() {
+  const profile = await requireUser();
+  redirect(profile.role === "admin" ? "/admin" : "/round");
 }

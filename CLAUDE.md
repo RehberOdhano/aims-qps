@@ -18,22 +18,31 @@ Approach all design, planning, and implementation on this project at the level o
 
 ## Status
 
-The app is being rebuilt as Next.js + Supabase. **Phase 1 (this scaffold) is done**: auth, DB schema/RLS, and a deployable skeleton. **Phase 2 (not started)**: porting the 19-section audit form, admin panel, Excel export, and PWA/offline sync from the legacy prototype into real UI.
+The app has been rebuilt as Next.js + Supabase, verified end-to-end against a live Supabase project (Mumbai/`ap-south-1`). **Phase 1** (auth/schema/RLS skeleton) and **Phase 2** (the 19-section audit round-taking tool, admin panel — user management, round history, Excel export/CAPA tracker, dashboard + sidebar navigation, shared UI components) are both done. Not yet deployed to Vercel.
 
-Until Phase 2 lands, `legacy/AIMS_QPS_v2.html` remains the reference for audit content, scoring rules, and export layout — see [Legacy Prototype](#legacy-prototype) below.
+**Roles**: only `admin` and `auditor` are used. A `viewer` (read-only) role was scaffolded in Phase 1 to match the legacy prototype's 3-role model, but no read-only screen was ever built for it, and it was removed (`supabase/migrations/0002_remove_viewer_role.sql`) rather than carry an unused role through the schema/RLS/UI indefinitely — see [Legacy Prototype § Roles](#roles) for the historical 3-role model this diverges from.
+
+**Not yet done**: PWA/offline sync (IndexedDB write-queue) and a personal round-history view for auditors (flagged as a possible gap, not yet requested).
+
+`legacy/AIMS_QPS_v2.html` remains a useful historical reference for the original audit content, scoring rules, and export layout this was ported from — see [Legacy Prototype](#legacy-prototype) below.
 
 ## Current Architecture (Next.js + Supabase)
 
 - **Framework**: Next.js 16 (App Router, TypeScript), package manager `npm`. Note: Next.js 16 renamed the `middleware.ts` convention to `proxy.ts` (exported function `proxy`, not `middleware`) — this repo uses `proxy.ts`.
-- **Auth + DB**: Supabase. `profiles` table (role/fullname/dept/status) 1:1 with `auth.users`; `rounds` table holds both drafts and finalized rounds via a `status` column, with a partial unique index enforcing one draft per auditor. See `supabase/migrations/0001_init.sql` for the full schema and RLS policies (admin/auditor/viewer access is enforced in Postgres, not just in the app), and [supabase/README.md](./supabase/README.md) for how to set that up and run it.
+- **Auth + DB**: Supabase. `profiles` table (role/fullname/dept/status) 1:1 with `auth.users`; `rounds` table holds both drafts and finalized rounds via a `status` column, with a partial unique index enforcing one draft per auditor. See `supabase/migrations/` for the full schema and RLS policies (admin/auditor access is enforced in Postgres, not just in the app), and [supabase/README.md](./supabase/README.md) for how to set that up and run it.
 - **Username-based login**: Supabase Auth requires an email; usernames are mapped to a synthetic `username@aims-qps.internal` address via `lib/username-email.ts` (used consistently by login and user-provisioning code — never store or display this address, it's an implementation detail).
-- **No public signup**: users are admin-provisioned only. `scripts/seed-admin.mjs` creates the first admin one-off; a proper admin "add user" UI is part of the Phase 2 admin panel port.
+- **No public signup**: users are admin-provisioned only, via the admin panel's Users page (`app/actions/admin-users.ts`). `scripts/seed-admin.mjs` remains for creating the very first admin one-off before any admin account exists.
 - **Structure**:
-  - `app/login/`, `app/(protected)/round/`, `app/(protected)/admin/` — `(protected)` layout enforces auth via `lib/dal.ts`'s `requireUser()`/`requireRole()`.
+  - `app/login/` — login page. `app/(protected)/layout.tsx` enforces auth via `lib/dal.ts`'s `requireUser()`/`requireRole()` and renders the shared topbar (`components/UserMenu.tsx` for profile/logout).
+  - `app/(protected)/round/` — the audit round-taking tool (any authenticated role can reach it; admins get a "Conduct Round" link in their sidebar plus a back-link once there).
+  - `app/(protected)/admin/` — `admin`-only (`admin/layout.tsx` + `AdminSidebar.tsx`): `page.tsx` (dashboard), `users/`, `rounds/` (history), `settings/` (change password).
+  - `app/(protected)/account/` — shared self-service profile/password page for non-admin roles (admins use `admin/settings/` instead, so they keep their sidebar).
+  - `components/` — shared UI primitives used across both admin and round pages: `Modal`, `ConfirmDialog`, `Card`, `Badge`, `FormField`, `Button` (owns loading-spinner behavior for every async action button), `PageLoader` (route `loading.tsx` fallback), `ChangePasswordCard`, `UserMenu`.
   - `lib/supabase/client.ts` (browser), `server.ts` (Server Components/Actions), `admin.ts` (service-role, server-only, never import from client code), `session.ts` (used by `proxy.ts` to refresh the session cookie).
-  - `types/database.ts` — hand-authored to match the migration; regenerate with `npx supabase gen types typescript --linked > types/database.ts` once the project is linked.
-- **Design tokens**: `app/globals.css` carries over the prototype's navy (`#1B3A6B`) / teal (`#0E7C7B`) palette as CSS custom properties; full component styles get ported alongside each screen in Phase 2.
-- **Not yet implemented**: the audit form, admin panel (user management/round history/CAPA export), Excel export, and PWA/offline sync.
+  - `lib/sections.ts` (audit content), `lib/scoring.ts` (compliance scoring), `lib/export-round.ts` (Excel export), `lib/admin-data.ts` (admin queries).
+  - `types/database.ts` — still hand-authored to match the migrations. The project is linked, so this can be regenerated any time with `npx supabase gen types typescript --linked > types/database.ts`; do that after the next schema change rather than hand-editing.
+- **Design tokens**: `app/globals.css` carries over the prototype's navy (`#1B3A6B`) / teal (`#0E7C7B`) palette as CSS custom properties, plus all component styles for the ported screens.
+- **Not yet implemented**: PWA/offline sync (IndexedDB write-queue).
 
 See [README.md](./README.md) for how to run this locally.
 
@@ -121,10 +130,10 @@ Admin panel has an additional "Export All Rounds" function that dumps the round 
 
 | Layer | Technology | Purpose | Status |
 |-------|-----------|---------|--------|
-| Frontend | Next.js (React) | UI, routing, API routes | Scaffolded |
-| Database + Auth | Supabase (PostgreSQL) | Multi-user data, role-based auth, row-level security | Scaffolded (schema + RLS in `supabase/migrations/0001_init.sql`) |
-| Offline support | PWA + IndexedDB | Works on ward with patchy WiFi; syncs when back online | Not started (Phase 2) |
-| Excel export | SheetJS | Same as prototype | Not started (Phase 2) |
+| Frontend | Next.js (React) | UI, routing, API routes | Built — audit tool + admin panel |
+| Database + Auth | Supabase (PostgreSQL) | Multi-user data, role-based auth, row-level security | Live — project linked (Mumbai/`ap-south-1`), migrations applied, RLS verified end-to-end |
+| Offline support | PWA + IndexedDB | Works on ward with patchy WiFi; syncs when back online | Not started |
+| Excel export | SheetJS (`xlsx` npm package, SheetJS's own patched CDN build — not the vulnerable npm-registry release) | Round export + CAPA tracker + export-all-rounds | Built |
 | Hosting | Vercel | Deploys from GitHub, zero DevOps | Not yet deployed |
 
 ### Deployment Model
@@ -146,4 +155,4 @@ Upgrade triggers: multiple hospitals → Supabase Pro (~$25/month); heavy traffi
 
 ### Target Platform
 
-Progressive Web App (PWA) — runs in any browser, installable on Android/iOS tablets used during ward rounds. Offline-first design is critical given unreliable hospital ward WiFi. Not yet implemented — see Phase 2 above.
+Progressive Web App (PWA) — runs in any browser, installable on Android/iOS tablets used during ward rounds. Offline-first design is critical given unreliable hospital ward WiFi. Not yet implemented — see [Status](#status) above.

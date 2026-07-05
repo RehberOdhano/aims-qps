@@ -30,14 +30,19 @@ export async function login(
   const {
     data: { user },
   } = await supabase.auth.getUser();
+
+  let role: string | undefined;
   if (user) {
-    await supabase
+    const { data: profile } = await supabase
       .from("profiles")
       .update({ last_login: new Date().toISOString() })
-      .eq("id", user.id);
+      .eq("id", user.id)
+      .select("role")
+      .single();
+    role = profile?.role;
   }
 
-  redirect("/round");
+  redirect(role === "admin" ? "/admin" : "/round");
 }
 
 export async function logout() {
