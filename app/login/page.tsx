@@ -9,25 +9,8 @@ export default function LoginPage() {
   const [state, formAction, pending] = useActionState(login, undefined);
 
   return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        minHeight: "100vh",
-        background:
-          "linear-gradient(135deg, var(--color-navy) 0%, var(--color-teal) 100%)",
-      }}
-    >
-      <div
-        style={{
-          background: "#fff",
-          borderRadius: 12,
-          padding: "36px 40px",
-          width: 380,
-          boxShadow: "0 20px 60px rgba(0,0,0,0.25)",
-        }}
-      >
+    <div className="login-shell">
+      <div className="login-card">
         <div style={{ textAlign: "center", marginBottom: 24 }}>
           <Image
             src="/aria-hospital-logo.jpeg"

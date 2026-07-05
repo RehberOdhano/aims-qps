@@ -76,6 +76,33 @@ a {
   white-space: nowrap;
 }
 
+/*
+  Hamburger toggle for the off-canvas sidebar drawer (see .sidebar overrides
+  and .sidebar-backdrop under the 900px breakpoint below). Hidden by default
+  since the sidebar is always visible at desktop widths.
+*/
+.hamburger-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+}
+
+.hamburger-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.sidebar-backdrop {
+  display: none;
+}
+
 .user-menu-trigger {
   display: flex;
   align-items: center;
@@ -1079,4 +1106,114 @@ a {
    as the full-page spinner above, just applied directly to an icon. */
 .icon-spin {
   animation: spin 0.7s linear infinite;
+}
+
+/*
+  Login card — width is capped, not fixed, so it fits phone-width viewports
+  without horizontal overflow.
+*/
+.login-shell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 16px;
+  background: linear-gradient(135deg, var(--color-navy) 0%, var(--color-teal) 100%);
+}
+
+.login-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 36px 40px;
+  width: 380px;
+  max-width: 100%;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+}
+
+/*
+  Tables that could overflow narrow viewports scroll horizontally within
+  their own wrapper instead of crushing columns illegibly or blowing out the
+  page width.
+*/
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.table-scroll .data-table {
+  min-width: 640px;
+}
+
+/*
+  Responsive breakpoint: below this, the persistent .sidebar (used by both
+  /round and /admin) becomes an off-canvas drawer toggled via the topbar's
+  hamburger (components/MobileSidebar.tsx), and dense grids/tables reflow
+  for touch + narrow widths. Tablets in landscape (~1024px+) keep the
+  desktop layout; portrait tablets and phones get the drawer.
+*/
+@media (max-width: 900px) {
+  .hamburger-btn {
+    display: flex;
+  }
+
+  .sidebar {
+    position: fixed;
+    top: 46px;
+    left: 0;
+    bottom: 0;
+    z-index: 300;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    box-shadow: 4px 0 20px rgba(0, 0, 0, 0.3);
+  }
+
+  .sidebar.sidebar-open {
+    transform: translateX(0);
+  }
+
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    top: 46px;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 250;
+  }
+
+  .admin-content {
+    padding: 14px;
+  }
+
+  .scroll-area {
+    padding: 12px 14px 24px;
+  }
+
+  .stat-row {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .inline-form {
+    grid-template-columns: 1fr;
+  }
+
+  .comp-btn {
+    padding: 7px 12px;
+    font-size: 11px;
+  }
+
+  .nav-item {
+    padding: 9px 12px;
+  }
+}
+
+@media (max-width: 420px) {
+  .stat-row {
+    grid-template-columns: 1fr;
+  }
+
+  .login-card {
+    padding: 28px 22px;
+  }
 }

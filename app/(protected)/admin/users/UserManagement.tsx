@@ -113,6 +113,7 @@ export default function UserManagement({ currentProfile, profiles }: Props) {
       title="User Management"
       headerExtra={<span style={{ fontSize: 11, color: "var(--color-text-muted)" }}>{profiles.length} users total</span>}
     >
+      <div className="table-scroll">
       <table className="data-table">
         <thead>
           <tr>
@@ -175,6 +176,7 @@ export default function UserManagement({ currentProfile, profiles }: Props) {
           ))}
         </tbody>
       </table>
+      </div>
 
       <div style={{ marginTop: 16, borderTop: "1px solid var(--color-bg)", paddingTop: 14 }}>
         <div

@@ -10,6 +10,7 @@ import { downloadRoundExport } from "@/lib/export-round";
 import Badge from "@/components/Badge";
 import Button from "@/components/Button";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import { useSidebar, SidebarBackdrop } from "@/components/MobileSidebar";
 import type { Database, RoundState, RoundItemState } from "@/types/database";
 
 type Profile = Database["public"]["Tables"]["profiles"]["Row"];
@@ -118,6 +119,7 @@ export default function RoundClient({ profile, draft }: Props) {
   const [banner, setBanner] = useState<string | null>(null);
   const [showNewRoundConfirm, setShowNewRoundConfirm] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const { isOpen: sidebarOpen, close: closeSidebar } = useSidebar();
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isFirstRender = useRef(true);
@@ -203,7 +205,8 @@ export default function RoundClient({ profile, draft }: Props) {
 
   return (
     <div className="round-body">
-      <div className="sidebar">
+      <SidebarBackdrop />
+      <div className={`sidebar${sidebarOpen ? " sidebar-open" : ""}`}>
         {profile.role === "admin" && (
           <Link
             href="/admin"
@@ -272,7 +275,10 @@ export default function RoundClient({ profile, draft }: Props) {
                     key={s.id}
                     type="button"
                     className={`nav-item${activeSection === s.id ? " active" : ""}`}
-                    onClick={() => setActiveSection(s.id)}
+                    onClick={() => {
+                      setActiveSection(s.id);
+                      closeSidebar();
+                    }}
                   >
                     <span className={`nav-dot ${navDotClass(pct)}`} />
                     <span style={{ flex: 1, lineHeight: 1.3 }}>{s.label}</span>
