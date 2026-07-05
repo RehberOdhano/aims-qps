@@ -91,6 +91,7 @@ export default function RoundHistory({ rounds, generatedBy }: Props) {
           No completed rounds yet. Start auditing to see history here.
         </div>
       ) : (
+        <div className="table-scroll">
         <table className="data-table">
           <thead>
             <tr>
@@ -146,6 +147,7 @@ export default function RoundHistory({ rounds, generatedBy }: Props) {
             ))}
           </tbody>
         </table>
+        </div>
       )}
 
       {viewingRound && (

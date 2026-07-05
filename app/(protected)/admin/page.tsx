@@ -49,6 +49,7 @@ export default async function AdminDashboardPage() {
             No completed rounds yet. Start auditing to see history here.
           </div>
         ) : (
+          <div className="table-scroll">
           <table className="data-table">
             <thead>
               <tr>
@@ -75,6 +76,7 @@ export default async function AdminDashboardPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </Card>
     </div>
