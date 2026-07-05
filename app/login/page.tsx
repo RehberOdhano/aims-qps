@@ -1,7 +1,9 @@
 "use client";
 
 import { useActionState } from "react";
+import Image from "next/image";
 import { login } from "@/app/actions/auth";
+import Button from "@/components/Button";
 
 export default function LoginPage() {
   const [state, formAction, pending] = useActionState(login, undefined);
@@ -27,11 +29,19 @@ export default function LoginPage() {
         }}
       >
         <div style={{ textAlign: "center", marginBottom: 24 }}>
-          <h1 style={{ fontSize: 20, fontWeight: 700, color: "var(--color-navy)" }}>
+          <Image
+            src="/aria-hospital-logo.jpeg"
+            alt="Aria Institute of Medical Sciences"
+            width={180}
+            height={101}
+            priority
+            style={{ margin: "0 auto", display: "block" }}
+          />
+          <h1 style={{ fontSize: 18, fontWeight: 700, color: "var(--color-navy)", marginTop: 12 }}>
             AIMS QPS Rounding
           </h1>
           <p style={{ fontSize: 11, color: "var(--color-text-muted)", marginTop: 3 }}>
-            Aria Institute of Medical Sciences
+            Quality &amp; Patient Safety Rounding System
           </p>
         </div>
 
@@ -115,24 +125,9 @@ export default function LoginPage() {
             </div>
           )}
 
-          <button
-            type="submit"
-            disabled={pending}
-            style={{
-              width: "100%",
-              padding: 11,
-              background: "var(--color-navy)",
-              color: "#fff",
-              border: "none",
-              borderRadius: 6,
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: pending ? "default" : "pointer",
-              opacity: pending ? 0.7 : 1,
-            }}
-          >
-            {pending ? "Signing in…" : "Sign in"}
-          </button>
+          <Button type="submit" className="btn-primary" isLoading={pending} loadingLabel="Signing in…">
+            Sign in
+          </Button>
         </form>
       </div>
     </div>

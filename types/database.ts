@@ -2,7 +2,7 @@
 // Once the Supabase project is linked, regenerate the authoritative version with:
 //   npx supabase gen types typescript --linked > types/database.ts
 
-export type UserRole = "admin" | "auditor" | "viewer";
+export type UserRole = "admin" | "auditor";
 export type UserStatus = "active" | "inactive";
 export type RoundStatus = "draft" | "completed";
 

@@ -1,18 +1,21 @@
 import { requireUser } from "@/lib/dal";
+import { createClient } from "@/lib/supabase/server";
+import RoundClient from "./RoundClient";
 
-// Placeholder — Phase 2 ports the 19-section audit form here.
+// Admins can conduct rounds too (e.g. a QPS officer who also holds admin
+// credentials) — the admin's default landing page after login is still the
+// dashboard (see app/page.tsx / app/actions/auth.ts), but they aren't
+// blocked from reaching this page, via the sidebar's "Conduct Round" link.
 export default async function RoundPage() {
   const profile = await requireUser();
 
-  return (
-    <div style={{ padding: 32 }}>
-      <h2 style={{ fontSize: 16, fontWeight: 700, color: "var(--color-navy)" }}>
-        Welcome, {profile.fullname}
-      </h2>
-      <p style={{ marginTop: 8, color: "var(--color-text-muted)" }}>
-        The rounding form isn&apos;t ported yet — this confirms auth and
-        routing are wired up end to end.
-      </p>
-    </div>
-  );
+  const supabase = await createClient();
+  const { data: draft } = await supabase
+    .from("rounds")
+    .select("*")
+    .eq("auditor_id", profile.id)
+    .eq("status", "draft")
+    .maybeSingle();
+
+  return <RoundClient profile={profile} draft={draft} />;
 }
