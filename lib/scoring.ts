@@ -4,10 +4,16 @@
 // they're usable from Server Actions (finalizing a round) and Excel
 // export (lib/export-round.ts) without a DOM.
 //
+// `sections` is passed in rather than imported — audit content is
+// admin-managed (lib/sections-data.ts), not static, so callers fetch it once
+// and thread it through instead of each pure function reaching for a global.
+// Answers are keyed by item.id (a stable database uuid), not array position,
+// since content can be reordered/edited/deleted by an admin at any time.
+//
 // Rules: Yes = 2 pts, Partial = 1 pt, No = 0 pt, N/A excluded from the
 // denominator. ≥95% Excellent, ≥90% Good, ≥80% Needs Improvement, <80% Critical.
 
-import { SECTIONS, type Section } from "@/lib/sections";
+import type { Section } from "@/lib/sections";
 import type { RoundState } from "@/types/database";
 
 export type SectionScore = {
@@ -34,8 +40,8 @@ export function sectionScore(section: Section, state: RoundState): SectionScore 
   let partial = 0;
   let no = 0;
 
-  section.items.forEach((_, i) => {
-    const comp = state[section.id]?.[i]?.comp;
+  section.items.forEach((item) => {
+    const comp = state[section.id]?.[item.id]?.comp;
     if (comp === "yes") {
       score += 2;
       max += 2;
@@ -53,11 +59,11 @@ export function sectionScore(section: Section, state: RoundState): SectionScore 
   return { score, max, pct: max === 0 ? null : Math.round((score / max) * 100), yes, partial, no };
 }
 
-export function overallScore(state: RoundState): { pct: number | null } {
+export function overallScore(sections: Section[], state: RoundState): { pct: number | null } {
   let score = 0;
   let max = 0;
 
-  SECTIONS.forEach((section) => {
+  sections.forEach((section) => {
     const s = sectionScore(section, state);
     score += s.score;
     max += s.max;
@@ -66,7 +72,7 @@ export function overallScore(state: RoundState): { pct: number | null } {
   return { pct: max === 0 ? null : Math.round((score / max) * 100) };
 }
 
-export function getRoundSummary(state: RoundState): RoundSummary {
+export function getRoundSummary(sections: Section[], state: RoundState): RoundSummary {
   let score = 0;
   let max = 0;
   let totalItems = 0;
@@ -74,9 +80,9 @@ export function getRoundSummary(state: RoundState): RoundSummary {
   let partial = 0;
   let criticalNC = 0;
 
-  SECTIONS.forEach((section) => {
-    section.items.forEach((item, i) => {
-      const comp = state[section.id]?.[i]?.comp;
+  sections.forEach((section) => {
+    section.items.forEach((item) => {
+      const comp = state[section.id]?.[item.id]?.comp;
       if (comp === "yes") {
         score += 2;
         max += 2;
@@ -104,25 +110,36 @@ export function getRoundSummary(state: RoundState): RoundSummary {
   };
 }
 
-export type ComplianceTier = "excellent" | "good" | "needs_improvement" | "critical" | null;
+// JCI-aligned compliance bands (see the "Scoring" section in CLAUDE.md) — the one place
+// these numbers live. Every tier/color/label helper below, plus the ones in
+// lib/export-round.ts and RoundClient.tsx, reads from here instead of each
+// repeating its own 95/90/80 magic numbers.
+export const COMPLIANCE_EXCELLENT = 95;
+export const COMPLIANCE_GOOD = 90;
+export const COMPLIANCE_NEEDS_IMPROVEMENT = 80;
 
-// Returns the tier only — display strings/colors differ by context (UI meter
-// vs. Excel "Performance" column), so consumers format their own label.
-export function complianceTier(pct: number | null): ComplianceTier {
-  if (pct === null) return null;
-  if (pct >= 95) return "excellent";
-  if (pct >= 90) return "good";
-  if (pct >= 80) return "needs_improvement";
-  return "critical";
-}
+export type BadgeTone = "success" | "warning" | "danger" | "neutral";
 
 // A coarser 3-tier scale (no separate "good" band) used by the compliance
-// Badge — this is the scale legacy's section-progress bar and the admin
-// pct badge both already used; complianceTier above is the finer 4-tier
-// scale the overall meter widget uses and is a different, deliberate thing.
-export function complianceBadgeTone(pct: number | null): "success" | "warning" | "danger" | "neutral" {
+// Badge, the round-taking section bar, and round-history rows — the overall
+// meter widget in RoundClient.tsx uses the finer 4-band scale instead and is
+// a deliberate exception.
+export function complianceBadgeTone(pct: number | null): BadgeTone {
   if (pct === null) return "neutral";
-  if (pct >= 95) return "success";
-  if (pct >= 80) return "warning";
+  if (pct >= COMPLIANCE_EXCELLENT) return "success";
+  if (pct >= COMPLIANCE_NEEDS_IMPROVEMENT) return "warning";
   return "danger";
+}
+
+const TONE_COLOR_VAR: Record<BadgeTone, string> = {
+  success: "var(--color-success)",
+  warning: "var(--color-warning)",
+  danger: "var(--color-danger)",
+  neutral: "var(--color-text-faint)",
+};
+
+// Same 3-tier scale as complianceBadgeTone, but as a raw CSS color for
+// inline styling (progress bars, colored numbers) rather than a Badge tone.
+export function complianceColor(pct: number | null): string {
+  return TONE_COLOR_VAR[complianceBadgeTone(pct)];
 }

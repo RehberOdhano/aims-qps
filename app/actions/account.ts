@@ -6,6 +6,27 @@ import { usernameToEmail } from "@/lib/username-email";
 
 export type AccountActionResult = { error: string } | { ok: true };
 
+export type UpdateProfileInput = { fullname: string; dept: string };
+
+// Self-service edit — fullname/dept only. Role/status stay admin-only (see
+// app/actions/admin-users.ts's updateUser and the prevent_self_role_change
+// trigger); this update never touches those columns, so the trigger and RLS's
+// "users can update own profile" policy both allow it for any role.
+export async function updateOwnProfile(input: UpdateProfileInput): Promise<AccountActionResult> {
+  const profile = await requireUser();
+  const fullname = input.fullname.trim();
+  if (!fullname) return { error: "Full name is required." };
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("profiles")
+    .update({ fullname, dept: input.dept.trim() || null })
+    .eq("id", profile.id);
+  if (error) return { error: error.message };
+
+  return { ok: true };
+}
+
 export async function changeOwnPassword(
   currentPassword: string,
   newPassword: string,

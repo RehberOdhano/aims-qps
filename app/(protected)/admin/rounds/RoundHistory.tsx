@@ -2,8 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { SECTIONS, RISK_LABELS } from "@/lib/sections";
-import { complianceBadgeTone } from "@/lib/scoring";
+import { RISK_LABELS, type Section } from "@/lib/sections";
+import { complianceBadgeTone, complianceColor } from "@/lib/scoring";
 import { deleteRound } from "@/app/actions/admin-rounds";
 import { downloadRoundExport, downloadAllRoundsExport } from "@/lib/export-round";
 import Card from "@/components/Card";
@@ -14,17 +14,11 @@ import type { RoundWithAuditor } from "@/lib/admin-data";
 
 type Props = {
   rounds: RoundWithAuditor[];
+  sections: Section[];
   generatedBy: string;
 };
 
-function pctColor(pct: number | null): string {
-  if (pct === null) return "var(--color-text-faint)";
-  if (pct >= 95) return "var(--color-success)";
-  if (pct >= 80) return "var(--color-warning)";
-  return "var(--color-danger)";
-}
-
-export default function RoundHistory({ rounds, generatedBy }: Props) {
+export default function RoundHistory({ rounds, sections, generatedBy }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [viewingId, setViewingId] = useState<string | null>(null);
@@ -35,7 +29,7 @@ export default function RoundHistory({ rounds, generatedBy }: Props) {
   const deletingRound = rounds.find((r) => r.id === deletingId);
 
   function handleExport(round: RoundWithAuditor) {
-    downloadRoundExport({
+    downloadRoundExport(sections, {
       dept: round.dept,
       auditor: round.auditorName,
       dateShift: round.date_shift,
@@ -179,7 +173,7 @@ export default function RoundHistory({ rounds, generatedBy }: Props) {
                 <tr>
                   <td style={{ padding: "4px 0", color: "var(--color-text-muted)" }}>Overall Compliance</td>
                   <td>
-                    <strong style={{ color: pctColor(viewingRound.pct) }}>
+                    <strong style={{ color: complianceColor(viewingRound.pct) }}>
                       {viewingRound.pct !== null ? `${viewingRound.pct}%` : "Not fully assessed"}
                     </strong>
                   </td>
@@ -209,15 +203,20 @@ export default function RoundHistory({ rounds, generatedBy }: Props) {
                 >
                   Non-Compliant &amp; Partial Items
                 </div>
-                {SECTIONS.map((section) => {
+                {sections.map((section) => {
                   const sectionState = viewingRound.state?.[section.id];
                   if (!sectionState) return null;
-                  return section.items.map((item, i) => {
-                    const st = sectionState[i];
+                  return section.items.map((item) => {
+                    // Prefer the snapshot saved onto the answer at finalize
+                    // time — it's what was actually asked, even if the live
+                    // question has since been edited by an admin.
+                    const st = sectionState[item.id];
                     if (!st || (st.comp !== "no" && st.comp !== "partial")) return null;
+                    const risk = st.risk ?? item.risk;
+                    const question = st.question ?? item.q;
                     return (
                       <div
-                        key={`${section.id}-${i}`}
+                        key={`${section.id}-${item.id}`}
                         style={{
                           background: st.comp === "no" ? "var(--color-danger-bg)" : "var(--color-warning-bg)",
                           borderRadius: 5,
@@ -232,9 +231,9 @@ export default function RoundHistory({ rounds, generatedBy }: Props) {
                             color: st.comp === "no" ? "var(--color-danger-text)" : "var(--color-warning-text)",
                           }}
                         >
-                          {st.comp === "no" ? "✗ Non-Compliant" : "~ Partial"} · {RISK_LABELS[item.risk]} Risk
+                          {st.comp === "no" ? "✗ Non-Compliant" : "~ Partial"} · {RISK_LABELS[risk]} Risk
                         </div>
-                        <div style={{ color: "var(--color-text)", marginTop: 2 }}>{item.q}</div>
+                        <div style={{ color: "var(--color-text)", marginTop: 2 }}>{question}</div>
                         {st.note && (
                           <div style={{ color: "var(--color-text-muted)", marginTop: 3, fontStyle: "italic" }}>
                             {st.note}

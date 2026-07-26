@@ -45,7 +45,7 @@ export async function updateSession(request: NextRequest) {
 
   if (user && isPublicRoute) {
     const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
-    const destination = profile?.role === "admin" ? "/admin" : "/round";
+    const destination = profile?.role === "admin" ? "/admin" : "/dashboard";
     return NextResponse.redirect(new URL(destination, request.url));
   }
 

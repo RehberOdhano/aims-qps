@@ -3,5 +3,5 @@ import { requireUser } from "@/lib/dal";
 
 export default async function RootPage() {
   const profile = await requireUser();
-  redirect(profile.role === "admin" ? "/admin" : "/round");
+  redirect(profile.role === "admin" ? "/admin" : "/dashboard");
 }

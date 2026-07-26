@@ -1,0 +1,46 @@
+#!/bin/sh
+# Blocks committing real env files or secret-shaped strings. Enable once per
+# clone with `git config core.hooksPath .githooks` (see the "Secrets" section
+# in README.md).
+# This is a backstop, not a substitute for keeping secrets out of tracked
+# files in the first place — it only catches shapes we thought to list below.
+
+set -e
+
+staged_files=$(git diff --cached --name-only --diff-filter=ACM)
+blocked=0
+
+# 1. Never allow a real env file to be staged, only the blank template.
+for f in $staged_files; do
+  case "$f" in
+    .env.local.example) ;;
+    .env|.env.*)
+      echo "BLOCKED: '$f' looks like a real env file — .env* holds secrets and must never be committed."
+      blocked=1
+      ;;
+  esac
+done
+
+# 2. Scan added lines (not deleted ones) of staged text files for
+# secret-shaped strings: Supabase JWT-style keys, Supabase's newer
+# sb_secret_/sb_publishable_ keys, AWS access key IDs, and PEM private keys.
+pattern='eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}|sb_secret_[A-Za-z0-9]{10,}|AKIA[0-9A-Z]{16}|-----BEGIN[A-Z ]*PRIVATE KEY-----'
+
+matches=$(git diff --cached -U0 -- . ':(exclude)package-lock.json' \
+  | grep -E '^\+' \
+  | grep -vE '^\+\+\+' \
+  | grep -E "$pattern" || true)
+
+if [ -n "$matches" ]; then
+  echo "BLOCKED: staged changes contain what looks like a real secret:"
+  echo "$matches"
+  blocked=1
+fi
+
+if [ "$blocked" -eq 1 ]; then
+  echo ""
+  echo "If this is a false positive, fix the pattern in .githooks/pre-commit rather than bypassing with --no-verify."
+  exit 1
+fi
+
+exit 0

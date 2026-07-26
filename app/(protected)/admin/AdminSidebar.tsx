@@ -2,18 +2,31 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Users, ClipboardList, Settings, ClipboardCheck, type LucideIcon } from "lucide-react";
+import {
+  LayoutDashboard,
+  Users,
+  ClipboardList,
+  ClipboardEdit,
+  Stethoscope,
+  Building2,
+  Settings,
+  ClipboardCheck,
+  type LucideIcon,
+} from "lucide-react";
 import { useSidebar, SidebarBackdrop } from "@/components/MobileSidebar";
 
 const ITEMS: { href: string; label: string; icon: LucideIcon }[] = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard },
   { href: "/admin/users", label: "Users", icon: Users },
   { href: "/admin/rounds", label: "Rounds", icon: ClipboardList },
-  { href: "/admin/settings", label: "Settings", icon: Settings },
+  { href: "/admin/sections", label: "Core Sections", icon: ClipboardEdit },
+  { href: "/admin/specialty-modules", label: "Specialty Modules", icon: Stethoscope },
+  { href: "/admin/departments", label: "Departments", icon: Building2 },
   // Lives outside the admin route group (shared with the auditor role), so
   // "active" highlighting for it never applies within this sidebar — it's a
   // one-way door out to the rounding tool, not a page rendered inside here.
   { href: "/round", label: "Conduct Round", icon: ClipboardCheck },
+  { href: "/admin/settings", label: "Settings", icon: Settings },
 ];
 
 export default function AdminSidebar() {

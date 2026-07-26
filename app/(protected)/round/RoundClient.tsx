@@ -2,10 +2,18 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
-import { ArrowLeft, Download, Save, RotateCcw } from "lucide-react";
-import { SECTIONS, DEPARTMENTS, RISK_LABELS, type Section } from "@/lib/sections";
-import { sectionScore, overallScore } from "@/lib/scoring";
-import { autosaveDraft, saveRound, startNewRound } from "@/app/actions/rounds";
+import { useRouter } from "next/navigation";
+import { ArrowLeft, Download, Save, RotateCcw, Check, Minus, X, Ban, type LucideIcon } from "lucide-react";
+import { RISK_LABELS, type Section } from "@/lib/sections";
+import {
+  sectionScore,
+  overallScore,
+  complianceColor,
+  COMPLIANCE_EXCELLENT,
+  COMPLIANCE_GOOD,
+  COMPLIANCE_NEEDS_IMPROVEMENT,
+} from "@/lib/scoring";
+import { autosaveDraft, saveRound } from "@/app/actions/rounds";
 import { downloadRoundExport } from "@/lib/export-round";
 import Badge from "@/components/Badge";
 import Button from "@/components/Button";
@@ -19,14 +27,16 @@ type RoundRow = Database["public"]["Tables"]["rounds"]["Row"];
 type Props = {
   profile: Profile;
   draft: RoundRow | null;
+  sections: Section[];
+  departments: string[];
 };
 
-function buildInitialState(existing?: RoundState): RoundState {
+function buildInitialState(sections: Section[], existing?: RoundState): RoundState {
   const state: RoundState = {};
-  SECTIONS.forEach((section) => {
+  sections.forEach((section) => {
     state[section.id] = {};
-    section.items.forEach((_, i) => {
-      state[section.id][i] = existing?.[section.id]?.[i] ?? { comp: null, note: "", person: "" };
+    section.items.forEach((item) => {
+      state[section.id][item.id] = existing?.[section.id]?.[item.id] ?? { comp: null, note: "", person: "" };
     });
   });
   return state;
@@ -34,6 +44,13 @@ function buildInitialState(existing?: RoundState): RoundState {
 
 const SHIFTS = ["Morning", "Evening", "Night"] as const;
 type Shift = (typeof SHIFTS)[number];
+
+const COMP_OPTIONS: { value: "yes" | "partial" | "no" | "na"; label: string; icon: LucideIcon }[] = [
+  { value: "yes", label: "Yes", icon: Check },
+  { value: "partial", label: "Partial", icon: Minus },
+  { value: "no", label: "No", icon: X },
+  { value: "na", label: "N/A", icon: Ban },
+];
 
 // The `rounds.date_shift` column stays a single text field (no migration
 // needed) — these two helpers just move the *input* from free text to a
@@ -67,20 +84,22 @@ function parseDateShift(value: string | null | undefined): { date: string; shift
 
 function meterFillColor(pct: number | null): string {
   if (pct === null) return "rgba(255,255,255,0.2)";
-  if (pct >= 95) return "#3DC990";
-  if (pct >= 90) return "#5BC0BE";
-  if (pct >= 80) return "#EFB44B";
+  if (pct >= COMPLIANCE_EXCELLENT) return "#3DC990";
+  if (pct >= COMPLIANCE_GOOD) return "#5BC0BE";
+  if (pct >= COMPLIANCE_NEEDS_IMPROVEMENT) return "#EFB44B";
   return "#E07070";
 }
 
 function meterStatus(pct: number | null): { text: string; color: string } {
   if (pct === null) return { text: "No items scored yet", color: "var(--color-accent-blue)" };
-  if (pct >= 95) return { text: "● Excellent", color: "#3DC990" };
-  if (pct >= 90) return { text: "● Good", color: "#82C79A" };
-  if (pct >= 80) return { text: "● Needs Improvement", color: "#EFB44B" };
+  if (pct >= COMPLIANCE_EXCELLENT) return { text: "● Excellent", color: "#3DC990" };
+  if (pct >= COMPLIANCE_GOOD) return { text: "● Good", color: "#82C79A" };
+  if (pct >= COMPLIANCE_NEEDS_IMPROVEMENT) return { text: "● Needs Improvement", color: "#EFB44B" };
   return { text: "● Critical — Escalate now", color: "#E07070" };
 }
 
+// Deliberately its own coarser scale (not the JCI compliance bands above) —
+// a quick red/amber/green glance at section health in the sidebar nav list.
 function navDotClass(pct: number | null): string {
   if (pct === null) return "";
   if (pct >= 80) return "g";
@@ -88,16 +107,9 @@ function navDotClass(pct: number | null): string {
   return "r";
 }
 
-function sectionBarColor(pct: number | null): string {
-  if (pct === null) return "var(--color-text-faint)";
-  if (pct >= 95) return "var(--color-success)";
-  if (pct >= 80) return "var(--color-warning)";
-  return "var(--color-danger)";
-}
-
-const SECTION_GROUPS: { grp: Section["grp"]; sections: Section[] }[] = (() => {
+function groupSections(sections: Section[]): { grp: Section["grp"]; sections: Section[] }[] {
   const groups: { grp: Section["grp"]; sections: Section[] }[] = [];
-  SECTIONS.forEach((section) => {
+  sections.forEach((section) => {
     let group = groups.find((g) => g.grp === section.grp);
     if (!group) {
       group = { grp: section.grp, sections: [] };
@@ -106,44 +118,73 @@ const SECTION_GROUPS: { grp: Section["grp"]; sections: Section[] }[] = (() => {
     group.sections.push(section);
   });
   return groups;
-})();
+}
 
-export default function RoundClient({ profile, draft }: Props) {
+export default function RoundClient({ profile, draft, sections, departments }: Props) {
+  const router = useRouter();
+  const [roundId, setRoundId] = useState<string | null>(draft?.id ?? null);
   const [dept, setDept] = useState(draft?.dept ?? "");
   const [date, setDate] = useState(() => parseDateShift(draft?.date_shift).date);
   const [shift, setShift] = useState<Shift>(() => parseDateShift(draft?.date_shift).shift);
   const dateShift = formatDateShift(date, shift);
-  const [auditState, setAuditState] = useState<RoundState>(() => buildInitialState(draft?.state));
+  const [auditState, setAuditState] = useState<RoundState>(() => buildInitialState(sections, draft?.state));
+  const SECTION_GROUPS = groupSections(sections);
   const [activeSection, setActiveSection] = useState<string | null>(null);
   const [autosaveState, setAutosaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [banner, setBanner] = useState<string | null>(null);
-  const [showNewRoundConfirm, setShowNewRoundConfirm] = useState(false);
+  const [showEmptyConfirm, setShowEmptyConfirm] = useState(false);
   const [isPending, startTransition] = useTransition();
   const { isOpen: sidebarOpen, close: closeSidebar } = useSidebar();
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isFirstRender = useRef(true);
+  // Set explicitly by the actual mutation handlers below (never by this
+  // effect), so it reflects a real user edit rather than "how many times has
+  // this effect run" — a naive isFirstRender-on-mount guard looks equivalent
+  // in production, but React Strict Mode's dev-only double-invocation of
+  // effects defeats it: the second invocation sees the guard already
+  // flipped and fires anyway, silently creating an empty draft row before
+  // the user has touched anything.
+  const hasUserInteracted = useRef(false);
+  // Guards against a narrow race on a brand-new round's very first save:
+  // two edits close enough together that the second timer fires before the
+  // first insert's response comes back would otherwise both see
+  // `roundId === null` and each insert their own row. While a first-ever
+  // insert is in flight, later firings just wait — once it resolves and
+  // `roundId` is set, the effect reruns and the next debounce correctly
+  // updates that same row instead of creating another one.
+  const isCreatingRef = useRef(false);
 
   // Debounced autosave — every change updates React state instantly (same
   // feel as legacy's synchronous localStorage write), but persistence to
   // Supabase waits for a pause in typing/clicking so we're not round-tripping
   // on every keystroke.
   useEffect(() => {
-    if (isFirstRender.current) {
-      isFirstRender.current = false;
-      return;
-    }
+    if (!hasUserInteracted.current) return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
+      if (!roundId && isCreatingRef.current) return;
+      if (!roundId) isCreatingRef.current = true;
       setAutosaveState("saving");
-      autosaveDraft({ state: auditState, dept, dateShift }).then((result) => {
-        setAutosaveState("error" in result ? "error" : "saved");
+      autosaveDraft({ roundId: roundId ?? undefined, state: auditState, dept, dateShift }).then((result) => {
+        isCreatingRef.current = false;
+        if ("error" in result) {
+          setAutosaveState("error");
+          return;
+        }
+        setAutosaveState("saved");
+        // First-ever save of a brand-new round — remember its id so later
+        // autosaves update this same row, and reflect it in the URL so a
+        // refresh resumes this draft instead of showing blank.
+        if (!roundId) {
+          setRoundId(result.id);
+          router.replace(`/round?draft=${result.id}`, { scroll: false });
+        }
       });
     }, 1500);
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [auditState, dept, dateShift]);
+  }, [auditState, dept, dateShift, roundId, router]);
 
   useEffect(() => {
     if (!banner) return;
@@ -151,94 +192,128 @@ export default function RoundClient({ profile, draft }: Props) {
     return () => clearTimeout(t);
   }, [banner]);
 
-  function setItemField(sectionId: string, i: number, patch: Partial<RoundItemState>) {
+  function setItemField(sectionId: string, itemId: string, patch: Partial<RoundItemState>) {
+    hasUserInteracted.current = true;
     setAuditState((prev) => ({
       ...prev,
       [sectionId]: {
         ...prev[sectionId],
-        [i]: { ...prev[sectionId][i], ...patch },
+        [itemId]: { ...prev[sectionId][itemId], ...patch },
       },
     }));
   }
 
+  function handleDeptChange(value: string) {
+    hasUserInteracted.current = true;
+    setDept(value);
+  }
+
+  function handleDateChange(value: string) {
+    hasUserInteracted.current = true;
+    setDate(value);
+  }
+
+  function handleShiftChange(value: Shift) {
+    hasUserInteracted.current = true;
+    setShift(value);
+  }
+
+  // Gate before finalizing: a department is required outright (the button is
+  // also disabled without one, this is just a defensive double-check), and
+  // saving with zero items assessed gets a confirmation rather than a silent
+  // no-op completed round — `overallPct` is null exactly when nothing has
+  // been scored yes/partial/no yet.
+  function handleSaveClick() {
+    if (!dept) return;
+    if (overallPct === null) {
+      setShowEmptyConfirm(true);
+      return;
+    }
+    handleSaveRound();
+  }
+
   function handleSaveRound() {
     startTransition(async () => {
-      const result = await saveRound({ state: auditState, dept, dateShift });
+      const result = await saveRound({ roundId: roundId ?? undefined, state: auditState, dept, dateShift });
       if ("error" in result) {
         setBanner(result.error);
         return;
       }
       setBanner(`Round saved: ${dept || "Not specified"} · ${dateShift || "—"}`);
-      setAuditState(buildInitialState());
+      // Reset to a blank slate for the next round — and require a genuine
+      // edit before autosaving it, so finishing a round doesn't immediately
+      // persist an empty draft nobody's touched yet.
+      hasUserInteracted.current = false;
+      setRoundId(null);
+      setAuditState(buildInitialState(sections));
       setActiveSection(null);
       setAutosaveState("idle");
+      router.replace("/round", { scroll: false });
     });
   }
 
-  function handleConfirmNewRound() {
-    setShowNewRoundConfirm(false);
-    startTransition(async () => {
-      const result = await startNewRound();
-      if ("error" in result) {
-        setBanner(result.error);
-        return;
-      }
-      setAuditState(buildInitialState());
-      setDept("");
-      setDate(todayInputValue());
-      setShift("Morning");
-      setActiveSection(null);
-      setAutosaveState("idle");
-      setBanner("New round started");
-    });
+  // An auditor can have several drafts at once (see
+  // 0005_allow_multiple_drafts.sql), so starting another one no longer
+  // discards anything — it's a plain client-side reset, no server call and
+  // no confirmation needed, since the current draft (if any) stays exactly
+  // as autosaved.
+  function handleNewRound() {
+    hasUserInteracted.current = false;
+    setRoundId(null);
+    setAuditState(buildInitialState(sections));
+    setDept("");
+    setDate(todayInputValue());
+    setShift("Morning");
+    setActiveSection(null);
+    setAutosaveState("idle");
+    router.replace("/round", { scroll: false });
+    setBanner("Started a new round — your other drafts are still saved.");
   }
 
   function handleExport() {
-    downloadRoundExport({ dept, auditor: profile.fullname, dateShift, state: auditState });
+    downloadRoundExport(sections, { dept, auditor: profile.fullname, dateShift, state: auditState });
     setBanner("Excel exported");
   }
 
-  const { pct: overallPct } = overallScore(auditState);
+  const { pct: overallPct } = overallScore(sections, auditState);
   const status = meterStatus(overallPct);
-  const section = activeSection ? SECTIONS.find((s) => s.id === activeSection) : null;
+  const section = activeSection ? sections.find((s) => s.id === activeSection) : null;
   const sectionStats = section ? sectionScore(section, auditState) : null;
 
   return (
     <div className="round-body">
       <SidebarBackdrop />
       <div className={`sidebar${sidebarOpen ? " sidebar-open" : ""}`}>
-        {profile.role === "admin" && (
-          <Link
-            href="/admin"
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              padding: "9px 12px",
-              fontSize: 11,
-              fontWeight: 600,
-              color: "var(--color-accent-blue)",
-              borderBottom: "1px solid rgba(255,255,255,0.08)",
-            }}
-          >
-            <ArrowLeft size={14} strokeWidth={2} />
-            Back
-          </Link>
-        )}
+        <Link
+          href={profile.role === "admin" ? "/admin" : "/dashboard"}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            padding: "9px 12px",
+            fontSize: 11,
+            fontWeight: 600,
+            color: "var(--color-accent-blue)",
+            borderBottom: "1px solid rgba(255,255,255,0.08)",
+          }}
+        >
+          <ArrowLeft size={14} strokeWidth={2} />
+          Back
+        </Link>
         <div className="sb-meta">
           <label>Department / Unit</label>
-          <select value={dept} onChange={(e) => setDept(e.target.value)}>
+          <select value={dept} onChange={(e) => handleDeptChange(e.target.value)}>
             <option value="">Select department…</option>
-            {DEPARTMENTS.map((d) => (
+            {departments.map((d) => (
               <option key={d} value={d}>
                 {d}
               </option>
             ))}
           </select>
           <label>Date</label>
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+          <input type="date" value={date} onChange={(e) => handleDateChange(e.target.value)} />
           <label>Shift</label>
-          <select value={shift} onChange={(e) => setShift(e.target.value as Shift)}>
+          <select value={shift} onChange={(e) => handleShiftChange(e.target.value as Shift)}>
             {SHIFTS.map((s) => (
               <option key={s} value={s}>
                 {s}
@@ -297,21 +372,22 @@ export default function RoundClient({ profile, draft }: Props) {
           <Button
             className="sb-btn"
             style={{ background: "var(--color-navy)", color: "#fff" }}
-            onClick={handleSaveRound}
+            onClick={handleSaveClick}
             isLoading={isPending}
             loadingLabel="Saving…"
+            disabled={!dept}
           >
             <Save size={14} strokeWidth={2} />
             Save Round
           </Button>
-          <button
-            type="button"
-            className="sb-btn btn-reset"
-            onClick={() => setShowNewRoundConfirm(true)}
-            disabled={isPending}
-          >
+          {!dept && (
+            <div style={{ fontSize: 9, color: "var(--color-accent-blue)", opacity: 0.7, textAlign: "center" }}>
+              Select a department before saving
+            </div>
+          )}
+          <button type="button" className="sb-btn btn-reset" onClick={handleNewRound} disabled={isPending}>
             <RotateCcw size={14} strokeWidth={2} />
-            New Round
+            Start Another Round
           </button>
         </div>
       </div>
@@ -339,13 +415,13 @@ export default function RoundClient({ profile, draft }: Props) {
                 className="sec-bar-fill"
                 style={{
                   width: `${sectionStats?.pct ?? 0}%`,
-                  background: sectionBarColor(sectionStats?.pct ?? null),
+                  background: complianceColor(sectionStats?.pct ?? null),
                 }}
               />
             </div>
             <div
               className="sec-pct-label"
-              style={{ color: sectionBarColor(sectionStats?.pct ?? null) }}
+              style={{ color: complianceColor(sectionStats?.pct ?? null) }}
             >
               {sectionStats?.pct !== null && sectionStats?.pct !== undefined ? `${sectionStats.pct}%` : "—"}
             </div>
@@ -361,11 +437,11 @@ export default function RoundClient({ profile, draft }: Props) {
           )}
           {section &&
             section.items.map((item, i) => {
-              const st = auditState[section.id]?.[i] ?? { comp: null, note: "", person: "" };
+              const st = auditState[section.id]?.[item.id] ?? { comp: null, note: "", person: "" };
               const rowClass =
                 st.comp === "no" ? " nc" : st.comp === "partial" ? " partial" : st.comp === "yes" ? " compliant" : "";
               return (
-                <div key={i} className={`audit-row${rowClass}`}>
+                <div key={item.id} className={`audit-row${rowClass}`}>
                   <div className="row-top">
                     <span className="row-num">{i + 1}</span>
                     <span className="row-std">{item.std}</span>
@@ -374,14 +450,15 @@ export default function RoundClient({ profile, draft }: Props) {
                   </div>
                   <div className="row-controls">
                     <div className="comp-btns">
-                      {(["yes", "partial", "no", "na"] as const).map((v) => (
+                      {COMP_OPTIONS.map(({ value, label, icon: Icon }) => (
                         <button
-                          key={v}
+                          key={value}
                           type="button"
-                          className={`comp-btn${st.comp === v ? ` sel-${v}` : ""}`}
-                          onClick={() => setItemField(section.id, i, { comp: v })}
+                          className={`comp-btn${st.comp === value ? ` sel-${value}` : ""}`}
+                          onClick={() => setItemField(section.id, item.id, { comp: value })}
                         >
-                          {v === "yes" ? "✓ Yes" : v === "partial" ? "~ Partial" : v === "no" ? "✗ No" : "N/A"}
+                          <Icon size={12} strokeWidth={2.75} />
+                          {label}
                         </button>
                       ))}
                     </div>
@@ -389,13 +466,13 @@ export default function RoundClient({ profile, draft }: Props) {
                       className="row-note"
                       placeholder="Comments / action required…"
                       value={st.note}
-                      onChange={(e) => setItemField(section.id, i, { note: e.target.value })}
+                      onChange={(e) => setItemField(section.id, item.id, { note: e.target.value })}
                     />
                     <input
                       className="person-input"
                       placeholder="Responsible person…"
                       value={st.person}
-                      onChange={(e) => setItemField(section.id, i, { person: e.target.value })}
+                      onChange={(e) => setItemField(section.id, item.id, { person: e.target.value })}
                     />
                   </div>
                 </div>
@@ -406,15 +483,18 @@ export default function RoundClient({ profile, draft }: Props) {
 
       {banner && <div className="toast-banner">{banner}</div>}
 
-      {showNewRoundConfirm && (
+      {showEmptyConfirm && (
         <ConfirmDialog
-          title="Start New Round"
-          message="Start a new round? The current round will be lost unless you saved it first."
-          confirmLabel="Start New Round"
+          title="Save Incomplete Round?"
+          message="No items have been assessed yet (everything is still unanswered or N/A). Save this round anyway?"
+          confirmLabel="Save Anyway"
           tone="safe"
           isPending={isPending}
-          onConfirm={handleConfirmNewRound}
-          onCancel={() => setShowNewRoundConfirm(false)}
+          onConfirm={() => {
+            setShowEmptyConfirm(false);
+            handleSaveRound();
+          }}
+          onCancel={() => setShowEmptyConfirm(false)}
         />
       )}
     </div>

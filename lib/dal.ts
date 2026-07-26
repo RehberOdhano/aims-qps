@@ -8,7 +8,7 @@ import type { UserRole } from "@/types/database";
 // optimistic redirect for UX, but every Server Component/Action that reads
 // or mutates data must call through here too — proxy coverage silently
 // disappears if a route's matcher changes or a Server Function moves.
-export const getCurrentProfile = cache(async () => {
+const getCurrentProfile = cache(async () => {
   const supabase = await createClient();
   const {
     data: { user },
@@ -32,6 +32,6 @@ export async function requireUser() {
 
 export async function requireRole(...roles: UserRole[]) {
   const profile = await requireUser();
-  if (!roles.includes(profile.role)) redirect("/round");
+  if (!roles.includes(profile.role)) redirect("/dashboard");
   return profile;
 }

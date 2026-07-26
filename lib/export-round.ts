@@ -3,11 +3,25 @@
 // widths, and CAPA timeline wording are preserved exactly; this file is
 // client-only (the workbook is generated and downloaded in the browser, same
 // as legacy — nothing is uploaded to Supabase).
+//
+// `sections` (admin-managed content, see lib/sections-data.ts) is passed in
+// by the caller rather than imported, and answers are looked up by item.id
+// rather than array position — same reasoning as lib/scoring.ts. For a
+// *completed* round, prefer the question/std/risk snapshotted onto each
+// answer at save time (app/actions/rounds.ts's saveRound()) over the live
+// `sections` lookup, so an export of a finalized round reflects exactly what
+// was asked at the time, even if the content has since been edited.
 "use client";
 
 import * as XLSX from "xlsx";
-import { SECTIONS, RISK_LABELS } from "@/lib/sections";
-import type { RoundState } from "@/types/database";
+import { RISK_LABELS, type Section, type RiskLevel } from "@/lib/sections";
+import {
+  sectionScore,
+  COMPLIANCE_EXCELLENT,
+  COMPLIANCE_GOOD,
+  COMPLIANCE_NEEDS_IMPROVEMENT,
+} from "@/lib/scoring";
+import type { RoundState, RoundItemState } from "@/types/database";
 
 export type ExportableRound = {
   dept: string | null;
@@ -16,15 +30,32 @@ export type ExportableRound = {
   state: RoundState;
 };
 
+// Snapshotted fields (present only on a saved/completed round's answers)
+// win over the live section content, so a finalized export is immune to
+// content edits made after the round was taken.
+function answerQuestion(a: RoundItemState | undefined, liveQuestion: string): string {
+  return a?.question ?? liveQuestion;
+}
+function answerStd(a: RoundItemState | undefined, liveStd: string): string {
+  return a?.std ?? liveStd;
+}
+function answerRisk(a: RoundItemState | undefined, liveRisk: RiskLevel): RiskLevel {
+  return a?.risk ?? liveRisk;
+}
+function answerSectionLabel(state: RoundState, sectionId: string, liveLabel: string): string {
+  const firstAnswer = Object.values(state[sectionId] ?? {})[0];
+  return firstAnswer?.sectionLabel ?? liveLabel;
+}
+
 function performanceLabel(pct: number | null): string {
   if (pct === null) return "—";
-  if (pct >= 95) return "EXCELLENT";
-  if (pct >= 90) return "GOOD";
-  if (pct >= 80) return "NEEDS IMPROVEMENT";
+  if (pct >= COMPLIANCE_EXCELLENT) return "EXCELLENT";
+  if (pct >= COMPLIANCE_GOOD) return "GOOD";
+  if (pct >= COMPLIANCE_NEEDS_IMPROVEMENT) return "NEEDS IMPROVEMENT";
   return "CRITICAL";
 }
 
-export function buildRoundWorkbook(round: ExportableRound): XLSX.WorkBook {
+export function buildRoundWorkbook(sections: Section[], round: ExportableRound): XLSX.WorkBook {
   const wb = XLSX.utils.book_new();
   const dept = round.dept || "Not specified";
   const auditor = round.auditor || "—";
@@ -34,6 +65,7 @@ export function buildRoundWorkbook(round: ExportableRound): XLSX.WorkBook {
   // Summary sheet
   let totalScore = 0;
   let totalMax = 0;
+  let totalItemCount = 0;
   const summaryRows: (string | number)[][] = [
     ["ARIA INSTITUTE OF MEDICAL SCIENCES (AIMS)"],
     ["DAILY QUALITY & PATIENT SAFETY ROUNDING CHECKLIST — AIMS-QPS-RC-001"],
@@ -42,26 +74,14 @@ export function buildRoundWorkbook(round: ExportableRound): XLSX.WorkBook {
     [""],
     ["SECTION", "Items", "Score", "Max", "Compliance %", "Performance"],
   ];
-  SECTIONS.forEach((section) => {
-    let score = 0;
-    let max = 0;
-    section.items.forEach((_, i) => {
-      const comp = state[section.id]?.[i]?.comp;
-      if (comp === "yes") {
-        score += 2;
-        max += 2;
-      } else if (comp === "partial") {
-        score += 1;
-        max += 2;
-      } else if (comp === "no") {
-        max += 2;
-      }
-    });
+  sections.forEach((section) => {
+    const { score, max, pct } = sectionScore(section, state);
     totalScore += score;
     totalMax += max;
-    const pct = max === 0 ? null : Math.round((score / max) * 100);
+    totalItemCount += section.items.length;
+    const label = answerSectionLabel(state, section.id, section.label);
     summaryRows.push([
-      section.label,
+      label,
       section.items.length,
       score,
       max,
@@ -73,7 +93,7 @@ export function buildRoundWorkbook(round: ExportableRound): XLSX.WorkBook {
   summaryRows.push([""]);
   summaryRows.push([
     "OVERALL",
-    SECTIONS.reduce((a, s) => a + s.items.length, 0),
+    totalItemCount,
     totalScore,
     totalMax,
     overallPct !== null ? `${overallPct}%` : "Not started",
@@ -106,18 +126,19 @@ export function buildRoundWorkbook(round: ExportableRound): XLSX.WorkBook {
     ],
   ];
   let n = 1;
-  SECTIONS.forEach((section) => {
-    section.items.forEach((item, i) => {
-      const c = state[section.id]?.[i];
-      if (c?.comp === "no" || c?.comp === "partial") {
+  sections.forEach((section) => {
+    const label = answerSectionLabel(state, section.id, section.label);
+    section.items.forEach((item) => {
+      const a = state[section.id]?.[item.id];
+      if (a?.comp === "no" || a?.comp === "partial") {
         capaRows.push([
           n++,
-          section.label,
-          RISK_LABELS[item.risk],
-          item.q,
-          c.comp === "no" ? "Non-Compliant" : "Partial",
-          c.note || "",
-          c.person || "",
+          label,
+          RISK_LABELS[answerRisk(a, item.risk)],
+          answerQuestion(a, item.q),
+          a.comp === "no" ? "Non-Compliant" : "Partial",
+          a.note || "",
+          a.person || "",
           "",
           "",
           "",
@@ -146,58 +167,53 @@ export function buildRoundWorkbook(round: ExportableRound): XLSX.WorkBook {
   XLSX.utils.book_append_sheet(wb, capaWS, "CAPA Tracker");
 
   // One sheet per section
-  SECTIONS.forEach((section) => {
+  sections.forEach((section) => {
+    const label = answerSectionLabel(state, section.id, section.label);
     const rows: (string | number)[][] = [
-      [`AIMS DAILY QPS — ${section.label.toUpperCase()}`],
+      [`AIMS DAILY QPS — ${label.toUpperCase()}`],
       ["Standard:", section.std],
       ["Department:", dept, "Auditor:", auditor, "Date:", dateStr],
       [""],
       ["#", "Audit Standard", "Audit Question", "Risk", "Compliance", "Comments", "Responsible Person"],
     ];
     section.items.forEach((item, i) => {
-      const c = state[section.id]?.[i];
+      const a = state[section.id]?.[item.id];
       const complianceLabel =
-        c?.comp === "yes"
+        a?.comp === "yes"
           ? "Yes — Compliant"
-          : c?.comp === "partial"
+          : a?.comp === "partial"
             ? "Partial"
-            : c?.comp === "no"
+            : a?.comp === "no"
               ? "No — Non-Compliant"
-              : c?.comp === "na"
+              : a?.comp === "na"
                 ? "N/A"
                 : "Not Assessed";
-      rows.push([i + 1, item.std, item.q, RISK_LABELS[item.risk], complianceLabel, c?.note || "", c?.person || ""]);
+      rows.push([
+        i + 1,
+        answerStd(a, item.std),
+        answerQuestion(a, item.q),
+        RISK_LABELS[answerRisk(a, item.risk)],
+        complianceLabel,
+        a?.note || "",
+        a?.person || "",
+      ]);
     });
-    let score = 0;
-    let max = 0;
-    section.items.forEach((_, i) => {
-      const comp = state[section.id]?.[i]?.comp;
-      if (comp === "yes") {
-        score += 2;
-        max += 2;
-      } else if (comp === "partial") {
-        score += 1;
-        max += 2;
-      } else if (comp === "no") {
-        max += 2;
-      }
-    });
-    const pct = max === 0 ? null : Math.round((score / max) * 100);
+    const { score, max, pct } = sectionScore(section, state);
     rows.push([""], ["", "Score:", `${score}/${max}`, "Compliance:", pct !== null ? `${pct}%` : "—", "", ""]);
     const ws = XLSX.utils.aoa_to_sheet(rows);
     ws["!cols"] = [{ wch: 4 }, { wch: 24 }, { wch: 62 }, { wch: 12 }, { wch: 18 }, { wch: 38 }, { wch: 24 }];
     XLSX.utils.book_append_sheet(
       wb,
       ws,
-      section.label.replace(/[^\w\s]/g, "").trim().substring(0, 31),
+      label.replace(/[^\w\s]/g, "").trim().substring(0, 31),
     );
   });
 
   return wb;
 }
 
-export function downloadRoundExport(round: ExportableRound) {
-  const wb = buildRoundWorkbook(round);
+export function downloadRoundExport(sections: Section[], round: ExportableRound) {
+  const wb = buildRoundWorkbook(sections, round);
   const dept = (round.dept || "Not-specified").replace(/[\s/\\]/g, "-");
   const fname = `AIMS-QPS-${dept}-${new Date().toISOString().slice(0, 10)}.xlsx`;
   XLSX.writeFile(wb, fname);

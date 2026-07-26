@@ -42,7 +42,7 @@ export async function login(
     role = profile?.role;
   }
 
-  redirect(role === "admin" ? "/admin" : "/round");
+  redirect(role === "admin" ? "/admin" : "/dashboard");
 }
 
 export async function logout() {

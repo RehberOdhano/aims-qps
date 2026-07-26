@@ -1,4 +1,4 @@
-export type BadgeTone = "success" | "warning" | "danger" | "neutral";
+import type { BadgeTone } from "@/lib/scoring";
 
 type Props = {
   tone: BadgeTone;
